@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Cpk Number Generator</title>
+        <style>
+        header {
+            background-color: darkcyan;
+            padding: 10px;
+            border: 4px solid rgb(17, 41, 45);
+            text-align: center;
+            font-size: 30px;
+            color: white;
+            font-family: "calibri light";
+        }
+        .subhead {
+            background-color: darkcyan;
+            padding: 4px;
+            border: 2px solid rgb(17, 41, 45);
+            text-align: center;
+            font-size: 20px;
+            color: white;
+            display: block;
+        }
+        body {
+            background-color: rgb(131, 177, 183);
+            font-family: "calibri light";
+            margin: 15px;
+        }
+        p { color: rgb(17, 41, 45); }
+        blockquote {
+            color: rgb(17, 41, 45);
+            border: 2px solid rgb(235, 226, 145);
+            padding: 15px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        hr {
+            background-color: darkcyan;
+            height: 2px;
+            border: none;
+        }
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+            padding: 8px;
+            font-size: 16px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            background-color: darkcyan;
+            color: white;
+            border: 2px solid rgb(17, 41, 45);
+            cursor: pointer;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .error { color: #900; font-weight: bold; }
+        </style>
+    </head>
+
+    <body>
+        <header><b>Cpk Number Generator</b></header>
+        <hr>
+
+        <span class="subhead">Input Parameters</span>
+        <br>
+        <form onsubmit="gencpknum(event)">
+            <label for="upper">Upper Limit:</label><br>
+            <input type="number" step="any" id="upper" name="upper" value="10" required><br>
+            
+            <label for="lower">Lower Limit:</label><br>
+            <input type="number" step="any" id="lower" name="lower" value="0" required><br>
+            
+            <label for="count">Number of Samples:</label><br>
+            <input type="number" id="count" name="count" value="50" required><br>
+            
+            <label for="cpk">Target Cpk:</label><br>
+            <input type="number" step="any" id="cpk" name="cpk" value="1.33" required>
+            <br><br>
+            <button type="submit">Generate Dataset</button>            
+        </form>
+
+        <hr>
+        <span class="subhead">Output Results</span>
+        <blockquote id="results-box">
+            <p>Results will appear here after generation...</p>
+        </blockquote>
+
+<script>
+    // Standard normal distribution (Gaussian) using Box-Muller transform
+    function randomGaussian(mean, stdev) {
+        let u = 1 - Math.random();
+        let v = Math.random();
+        let z = Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+        return z * stdev + mean;
+    }
+
+    function calculateCpk(data, lsl, usl) {
+        const n = data.length;
+        if (n < 2) return 0;
+        
+        const mean = data.reduce((a, b) => a + b, 0) / n;
+        const variance = data.reduce((sum, x) => sum + Math.pow(x - mean, 2), 0) / (n - 1);
+        if (variance <= 0) return 0;
+        const stdDev = Math.sqrt(variance);
+        
+        const cpu = (usl - mean) / (3.0 * stdDev);
+        const cpl = (mean - lsl) / (3.0 * stdDev);
+        
+        return Math.min(cpu, cpl);
+    }
+
+    function gencpknum(event) {
+        event.preventDefault();
+
+        const upper = parseFloat(document.getElementById("upper").value);
+        const lower = parseFloat(document.getElementById("lower").value);
+        const count = parseInt(document.getElementById("count").value);
+        const targetCpk = parseFloat(document.getElementById("cpk").value);
+
+        const resultsBox = document.getElementById("results-box");
+        resultsBox.innerHTML = "<p>Generating data...</p>";
+
+        setTimeout(() => {
+            if (upper <= lower) {
+                resultsBox.innerHTML = `<p class="error">Error: Upper limit must be greater than lower limit.</p>`;
+                return;
+            }
+            if (count < 2) {
+                resultsBox.innerHTML = `<p class="error">Error: Count must be at least 2.</p>`;
+                return;
+            }
+            if (targetCpk < 1.0) {
+                resultsBox.innerHTML = `<p class="error">Error: Target Cpk must be at least 1.0.</p>`;
+                return;
+            }
+
+            const lsl = lower;
+            const usl = upper;
+            const targetMean = (lsl + usl) / 2.0;
+            const targetStd = (usl - targetMean) / (3.0 * (targetCpk + 0.15));
+
+            let dataset = [];
+            let finalCpk = 0;
+            let attempts = 0;
+            const maxAttempts = 50000;
+            let success = false;
+
+            while (attempts < maxAttempts) {
+                attempts++;
+                let currentDataset = [];
+                let outOfBounds = false;
+
+                for (let i = 0; i < count; i++) {
+                    let val = randomGaussian(targetMean, targetStd);
+                    if (val <= lsl || val >= usl) {
+                        outOfBounds = true;
+                        break;
+                    }
+                    currentDataset.push(parseFloat(val.toFixed(2)));
+                }
+
+                if (outOfBounds) continue;
+
+                let currentCpk = calculateCpk(currentDataset, lsl, usl);
+                if (currentCpk >= targetCpk) {
+                    dataset = currentDataset;
+                    finalCpk = currentCpk;
+                    success = true;
+                    break;
+                }
+            }
+
+            if (!success) {
+                resultsBox.innerHTML = `<p class="error">Error: Could not generate dataset matching that Cpk. Try lower targets or wider limits.</p>`;
+                return;
+            }
+
+            const minVal = Math.min(...dataset);
+            const maxVal = Math.max(...dataset);
+            const avgVal = (dataset.reduce((a, b) => a + b, 0) / dataset.length).toFixed(2);
+
+            resultsBox.innerHTML = `
+                <p><b>--- Data Generation Success ---</b></p>
+                <p><b>Verified Cpk:</b> ${finalCpk.toFixed(4)}</p>
+                <p><b>Total Numbers:</b> ${dataset.length}</p>
+                <p><b>Min Value:</b> ${minVal} | <b>Max Value:</b> ${maxVal}</p>
+                <p><b>Average:</b> ${avgVal}</p>
+                <p><b>Dataset Array:</b></p>
+                <pre>${JSON.stringify(dataset, null, 2)}</pre>
+            `;
+        }, 50);
+    }
+</script>
+
+    </body>
+</html>
